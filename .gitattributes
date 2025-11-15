@@ -1,0 +1,5 @@
+*.ipynb diff=jupyternotebook
+*.ipynb merge=jupyternotebook
+# Note: nbstripout filter is configured but commented out to avoid conflicts
+# Uncomment the line below to auto-strip outputs on commit:
+# *.ipynb filter=nbstripout
