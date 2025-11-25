@@ -48,7 +48,7 @@ class TextImageDataset(Dataset):
         
         # Load Vocab
         self.word2Id = dict(np.load(os.path.join(dict_dir, 'word2Id.npy')))
-        self.pad_id = self.word2Id.get('<PAD>', 0) # Default to 0 if not found
+        self.pad_id = int(self.word2Id.get('<PAD>', 0)) # Default to 0 if not found
         
         # Flatten dataset (Image, Caption)
         self.captions = []
@@ -87,6 +87,7 @@ class TextImageDataset(Dataset):
         
         # Process Caption
         cap = self.captions[idx]
+        cap = [int(x) for x in cap]
         cap_len = len(cap)
         
         if cap_len < self.max_len:
@@ -143,9 +144,16 @@ def sent_loss(cnn_code, rnn_code, labels, gamma=10.0):
 # ==============================================================================
 def train():
     # Load Vocab Size
-    vocab = np.load(os.path.join(CONFIG['DICT_DIR'], 'vocab.npy'))
-    vocab_size = len(vocab)
-    print(f"Vocab Size: {vocab_size}")
+    # Determine vocab size from word2Id to ensure coverage of all IDs
+    word2Id = dict(np.load(os.path.join(CONFIG['DICT_DIR'], 'word2Id.npy')))
+    max_id = 0
+    for v in word2Id.values():
+        try:
+            val = int(v)
+            if val > max_id: max_id = val
+        except: pass
+    vocab_size = max_id + 1
+    print(f"Vocab Size: {vocab_size} (Max ID: {max_id})")
     
     # Initialize Models
     text_encoder = RNN_ENCODER(ntoken=vocab_size, nhidden=256)
