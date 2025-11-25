@@ -181,6 +181,7 @@ def train():
     )
     
     print("Starting Training...")
+    best_r_prec = 0.0
     
     for epoch in range(CONFIG['EPOCHS']):
         start_time = time.time()
@@ -227,13 +228,61 @@ def train():
             steps += 1
             
         avg_loss = total_loss / steps
-        print(f"Epoch {epoch+1} Loss: {avg_loss:.4f} Time: {time.time()-start_time:.1f}s")
+        
+        # Evaluate
+        r_prec = evaluate_r_precision(text_encoder, image_encoder, dataloader, device)
+        print(f"Epoch {epoch+1} Loss: {avg_loss:.4f} | R-Precision: {r_prec:.2%} | Time: {time.time()-start_time:.1f}s")
+        
+        if r_prec > best_r_prec:
+            best_r_prec = r_prec
+            print("  >> New Best! Saving best models...")
+            torch.save(text_encoder.state_dict(), os.path.join(CONFIG['SAVE_DIR'], 'text_encoder_best.pth'))
+            torch.save(image_encoder.state_dict(), os.path.join(CONFIG['SAVE_DIR'], 'image_encoder_best.pth'))
         
         # Save Checkpoints every 5 epochs
         if (epoch + 1) % 5 == 0:
             print("Saving checkpoints...")
             torch.save(text_encoder.state_dict(), os.path.join(CONFIG['SAVE_DIR'], f'text_encoder{epoch+1}.pth'))
             torch.save(image_encoder.state_dict(), os.path.join(CONFIG['SAVE_DIR'], f'image_encoder{epoch+1}.pth'))
+
+def evaluate_r_precision(text_encoder, image_encoder, dataloader, device, num_batches=10):
+    """
+    Computes R-Precision (Batch-wise) on a subset of data.
+    Checks if the correct caption is retrieved for each image within the batch.
+    """
+    text_encoder.eval()
+    image_encoder.eval()
+    
+    total_correct = 0
+    total_samples = 0
+    
+    with torch.no_grad():
+        for i, (images, captions, cap_lens) in enumerate(dataloader):
+            if i >= num_batches: break
+            
+            images = images.to(device)
+            captions = captions.to(device)
+            cap_lens = cap_lens.to(device)
+            
+            hidden = text_encoder.init_hidden(images.size(0))
+            _, sent_emb = text_encoder(captions, cap_lens, hidden)
+            _, global_img = image_encoder(images)
+            
+            # Normalize
+            sent_emb = torch.nn.functional.normalize(sent_emb, p=2, dim=1)
+            global_img = torch.nn.functional.normalize(global_img, p=2, dim=1)
+            
+            # Similarity [B, B]
+            sim = torch.mm(global_img, sent_emb.t())
+            
+            # Accuracy
+            preds = torch.argmax(sim, dim=1)
+            targets = torch.arange(images.size(0)).to(device)
+            
+            total_correct += (preds == targets).sum().item()
+            total_samples += images.size(0)
+            
+    return total_correct / total_samples if total_samples > 0 else 0.0
 
 if __name__ == "__main__":
     train()
